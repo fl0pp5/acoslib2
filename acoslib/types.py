@@ -10,3 +10,6 @@ class Stream(enum.Enum):
     P10 = "p10"
 
 
+class ImageFormat(enum.Enum):
+    QCOW = "qcow2"
+    ISO = "iso"

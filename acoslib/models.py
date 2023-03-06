@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import abc
 import datetime
 import pathlib
 import re
@@ -8,11 +9,13 @@ import typing
 import gi
 import yaml
 
+from acoslib.images import QcowImage
+
 gi.require_version("OSTree", "1.0")
 
 from gi.repository import OSTree, Gio
 
-from acoslib.types import Arch, Stream
+from acoslib.types import Arch, Stream, ImageFormat
 from acoslib.utils import cmdlib
 
 
@@ -132,6 +135,10 @@ class Reference:
         stream = '_'.join(path[2:])
 
         return f"{stream}.{date}.{major}.{minor}"
+
+    @property
+    def image_dir(self) -> pathlib.Path:
+        return pathlib.Path(self.repository.stream_root, self.ostree_ref_dir, "images")
 
     @classmethod
     def from_ostree(cls, repository: Repository, ostree_ref: str, **extra) -> Reference:
@@ -459,3 +466,22 @@ class AltConf:
         """
         cmd = [f"export {k}=\"{v}\"" for k, v in self._env.items()]
         return ";".join(cmd).strip() + ";"
+
+
+class Image:
+    _FACTORY_LIST = {
+        ImageFormat.QCOW: QcowImage,
+    }
+
+    __slots__ = (
+        "_reference",
+    )
+
+    def __init__(self, reference: Reference) -> None:
+        self._reference = reference
+
+    def create(self, img_format: ImageFormat, commit: Commit):
+        return self._FACTORY_LIST.get(img_format).create(self._reference, commit)
+
+    def all(self, img_format: ImageFormat):
+        return self._FACTORY_LIST.get(img_format).all(self._reference)
