@@ -134,7 +134,7 @@ class Reference:
         return f"{stream}.{date}.{major}.{minor}"
 
     @classmethod
-    def from_ostree(cls, repository: Repository, ostree_ref: str) -> Reference:
+    def from_ostree(cls, repository: Repository, ostree_ref: str, **extra) -> Reference:
         parts = ostree_ref.split("/")
         if len(parts) != 3:
             raise ValueError(f"Invalid format of reference. Reference must be like `altcos/x86_64/p10`")
@@ -149,7 +149,7 @@ class Reference:
             return False
         return True
 
-    def create(self):
+    def create(self) -> None:
         cmdlib.runcmd(f"sudo -E {self.repository.script_root}/cmd_rootfs2repo.sh {self.ostree_ref}")
 
 
@@ -157,22 +157,22 @@ class SubReference(Reference):
     __slots__ = (
         "_name",
         "_altconf",
-        "_vars_dir"
+        "_root_dir"
     )
 
     def __init__(self, repository: Repository, arch: Arch, stream: Stream,
-                 name: str, altconf: pathlib.Path = None, vars_dir: pathlib.Path = None):
+                 name: str, altconf: str = None, root_dir: str = None):
         super().__init__(repository, arch, stream)
 
         self._name = name
-        self._altconf = altconf
-        self._vars_dir = vars_dir
+        self._altconf = pathlib.Path(altconf)
+        self._root_dir = pathlib.Path(root_dir)
 
-        # if not self._altconf.exists():
-        #     raise FileExistsError(f"altcos config file {self._altconf} not exists")
-        #
-        # if not self._vars_dir.exists():
-        #     raise FileExistsError(f"vars directory {self._vars_dir} not exists")
+        if self._altconf and not self._altconf.exists():
+            raise FileExistsError(f"altcos config file {self._altconf} not exists")
+
+        if self._root_dir and not self._root_dir.exists():
+            raise FileExistsError(f"root directory {self._root_dir} not exists")
 
     @property
     def ostree_ref(self) -> pathlib.Path:
@@ -181,45 +181,52 @@ class SubReference(Reference):
                             self._stream.value.capitalize(),
                             self._name)
 
+    @property
+    def altconf(self) -> pathlib.Path:
+        return self._altconf
+
+    @property
+    def root_dir(self) -> pathlib.Path:
+        return self._root_dir
+
     @classmethod
-    def from_ostree(cls, repository: Repository, ostree_ref: str) -> Reference:
+    def from_ostree(cls, repository: Repository, ostree_ref: str, **extra) -> Reference:
         parts = ostree_ref.split("/")
         if len(parts) != 4:
             raise ValueError(f"Invalid format of reference. Reference must be like `altcos/x86_64/Sisyphus/k8s`")
 
         return cls(repository, Arch(parts[1]), Stream(parts[2].lower()), parts[3])
 
-    @property
-    def altconf(self) -> pathlib.Path:
-        return self._altconf
+    @classmethod
+    def from_baseref(cls, base: Reference, **extra) -> SubReference:
+        return cls(base.repository, base.arch, base.stream, **extra)
 
-    @property
-    def vars_dir(self) -> pathlib.Path:
-        return self._vars_dir
+    def create(self) -> None:
+        script_root = self.repository.script_root
+        stream_root = self.repository.stream_root
 
-    def create(self):
-        scripts_root = self.repository.script_root
-        streams_root = self.repository.stream_root
+        if self._root_dir or self._altconf:
+            cmdlib.runcmd(
+                f"sudo -E {script_root}/cmd_create_subref_files.sh "
+                f"{self.ostree_ref_dir} "
+                f"{self.altconf} "
+                f"{self.root_dir}")
 
-        # cmdlib.runcmd(
-        #     f"sudo -E {scripts_root}/create_subref_files.sh {self.ostree_ref} {self.altconf}"
-        # )
-
-        merged_dir = pathlib.Path(streams_root, self.ostree_ref_dir, "roots", "merged")
+        merged_dir = pathlib.Path(stream_root, self.ostree_ref_dir, "roots", "merged")
 
         last_commit = Commit(super()).all()[-1]
         last_commit_id = last_commit.sha256
 
         cmdlib.runcmd(
-            cmd=f"{scripts_root}/cmd_ostree_checkout.sh {self.ostree_baseref} {last_commit_id} {self.ostree_ref} all")
+            f"{script_root}/cmd_ostree_checkout.sh {self.ostree_baseref} {last_commit_id} {self.ostree_ref} all")
 
         AltConf(self).exec(str(merged_dir))
 
         cmdlib.runcmd(
-            cmd=f"{scripts_root}/cmd_sync_updates.sh {self.ostree_ref} {last_commit_id} {self.version}")
+            f"{script_root}/cmd_sync_updates.sh {self.ostree_ref} {last_commit_id} {self.version}")
 
         cmdlib.runcmd(
-            cmd=f"{scripts_root}/cmd_ostree_commit.sh {self.ostree_ref} {last_commit_id} {self.version}")
+            f"{script_root}/cmd_ostree_commit.sh {self.ostree_ref} {last_commit_id} {self.version}")
 
 
 class Commit:
@@ -301,7 +308,7 @@ class Commit:
         return sorted(commit_list,
                       key=lambda item: item.date)
 
-    def create(self, commit_id: str, version: str):
+    def create(self, commit_id: str, version: str) -> None:
         ostree_baseref = self.reference.ostree_baseref
         ostree_ref = self.reference.ostree_ref
         scripts_root = self._reference.repository.script_root

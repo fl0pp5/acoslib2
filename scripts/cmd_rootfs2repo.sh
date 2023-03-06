@@ -16,177 +16,160 @@ fi
 
 check_commands "dracut" "ostree"
 
-if [ $# = 0 ]
-then
-	echo "Help: $0 <branch> [<rootfs archive>] [<directory of main ostree repository>] [<directory for output archives>]"
-	echo "For example: $0 acos/x86_64/sisyphus out/acos-20210824-x86_64.tar repo out"
-	echo "You can change TMPDIR environment variable to set another directory where temporary files will be stored"
-	echo "If directory of main ostree repository doesn't exists, new repository will be created"
-	echo "Default values:"
-	echo "- <rootfs archive> \$ALTCOS_ROOT/builds/rootfs_archives/<branch>/acos-latest-x86_64.tar"
-	echo "- <directory of main ostree repository> \$ALTCOS_ROOT/builds/streams/<branch>/bare"
-	echo "- <directory for output archives> \$ALTCOS_ROOT/builds/streams/<branch>/vars"
-	exit 1
-fi
 
-
-
-if [ -z "$STREAMS_ROOT" ]
-then
-    echo "Variable STREAMS_ROOT must be defined" && exit 1
-fi
-
-branch=$1
+branch=${1:-altcos/x86_64/sisyphus}
 branch_repo=$STREAMS_ROOT/$branch
 rootfs_archive="${2:-$branch_repo/mkimage-profiles/acos-latest-x86_64.tar}"
 main_repo="${3:-$branch_repo/bare/repo}"
 out_dir="${4:-$branch_repo/vars}"
+stream=$(ref_stream $branch)
 
-stream=$(ref_stream "$branch") || exit 1
-
-if [ ! -e "$rootfs_archive" ]
+if [ ! -e $rootfs_archive ]
 then
-    echo "ERROR: Rootfs archive must exist ($rootfs_archive)" && exit 1
+	echo "ERROR: Rootfs archive must exist ($rootfs_archive)"
+	exit 1
 fi
 
-[ -L "$rootfs_archive" ] && rootfs_archive=$(realpath "$rootfs_archive")
+[ -L $rootfs_archive ] && rootfs_archive=$(realpath $rootfs_archive)
 
-version_date=$(basename "$rootfs_archive" | awk -F- '{print $2;}')
+version_date=$(basename $rootfs_archive | awk -F- '{print $2;}')
+echo "Date for version: $version_date"
 
 if ! [[ "$version_date" =~ ^[0-9]{8}$ ]]
 then
-    echo "ERROR: The name of the rootfs archive ($rootfs_archive) contains an incorrect date" && exit 1
+	echo "ERROR: The name of the rootfs archive ($rootfs_archive) contains an incorrect date"
+	exit 1
 fi
 
 data_dir=$out_dir/$version_date
 if [[ -d "$data_dir" && -n "$(ls -1 "$data_dir" 2>/dev/null)" ]]
 then
-    let major=$(ls -1 "$data_dir" 2>/dev/null | sort -n | tail -1)+1
+  let major=$(ls -1 "$data_dir" 2>/dev/null | sort -n | tail -1)+1
 else
-    major=0
+  major=0
 fi
+
 
 version_dir=$version_date/$major/0
-version_full_dir=$out_dir/$version_dir
+version_full_dir=${out_dir}/$version_dir
 
-if [ -d "$version_full_dir" ]
+if [ -d $version_full_dir ]
 then
-    echo "ERROR: Version for date $version_date already exists."
+	echo "ERROR: Version for date $version_date already exists."
 	echo "Try: rm -rf $version_full_dir"
+	exit 1
 fi
+rm -rf $version_full_dir
 
-mkdir --mode=0775 -p "$version_full_dir" || exit 1
-tmpdir=$(mktemp --tmpdir -d rootfs2repo-XXXXXX)
-main_root="$tmpdir"/root
+mkdir --mode=0775 -p $version_full_dir
 
-mkdir -p "$main_root"
-tar xf "$rootfs_archive" -C "$main_root" --exclude=./dev/tty --exclude=./dev/tty0 --exclude=./dev/console \
-    --exclude=./dev/urandom --exclude=./dev/random --exclude=./dev/full --exclude=./dev/zero --exclude=/dev/null \
-    --exclude=./dev/pts/ptmx --exclude=./dev/null
+tmp_dir=$(mktemp --tmpdir -d rootfs_to_repo-XXXXXX)
+main_root=$tmp_dir/root
 
-rm -f "$main_root"/etc/resolv.conf
-ln -sf /run/systemd/resolve/resolv.conf "$main_root"/etc/resolv.conf
+mkdir --mode=0775 -p $main_root
+tar xf $rootfs_archive -C $main_root --exclude=./dev/tty --exclude=./dev/tty0 --exclude=./dev/console  --exclude=./dev/urandom --exclude=./dev/random --exclude=./dev/full --exclude=./dev/zero --exclude=/dev/null --exclude=./dev/pts/ptmx --exclude=./dev/null
+
+#Вынести в m-i-p
+rm -f $main_root/etc/resolv.conf
+ln -sf /run/systemd/resolve/resolv.conf $main_root/etc/resolv.conf
 
 rpms_dir="/home/$SUDO_USER/apt/$branch"
-if [ -d "$rpms_dir" ]
+if [ -d $rpms_dir ]
 then
-    apt-get update -y -o RPM::RootDir="$main_root"
-    apt-get install -y -o RPM::RootDir="$main_root" "$rpms_dir"/*
+  apt-get update -y -o RPM::RootDir=$main_root
+  apt-get install -y -o RPM::RootDir=$main_root $rpms_dir/*
 fi
 
-sed -i 's/^LABEL=ROOT\t/LABEL=boot\t/g' "$main_root"/etc/fstab
-sed -i 's/^AcceptEnv /#AcceptEnv /g' "$main_root"/etc/openssh/sshd_config
+sed -i 's/^LABEL=ROOT\t/LABEL=boot\t/g' $main_root/etc/fstab
+sed -i 's/^AcceptEnv /#AcceptEnv /g' $main_root/etc/openssh/sshd_config
 sed -i 's/^# WHEEL_USERS ALL=(ALL) ALL$/WHEEL_USERS ALL=(ALL) ALL/g' $main_root/etc/sudoers
-echo "zincati ALL=NOPASSWD: ALL" > "$main_root"/etc/sudoers.d/zincati
-sed -i 's|^HOME=/home$|HOME=/var/home|g' "$main_root"/etc/default/useradd
-echo "blacklist floppy" > "$main_root"/etc/modprobe.d/blacklist-floppy.conf
-mkdir --mode=0775 "$main_root"/sysroot
-ln -s sysroot/ostree "$main_root"/ostree
+echo "zincati ALL=NOPASSWD: ALL" > $main_root/etc/sudoers.d/zincati
+sed -i 's|^HOME=/home$|HOME=/var/home|g' $main_root/etc/default/useradd
+echo "blacklist floppy" > $main_root/etc/modprobe.d/blacklist-floppy.conf
+mkdir --mode=0775 $main_root/sysroot
+ln -s sysroot/ostree $main_root/ostree
 
-mv -f "$main_root"/home "$main_root"/opt "$main_root"/srv "$main_root"/mnt "$main_root"/var/
-mv -f "$main_root"/root "$main_root"/var/roothome
-mv -f "$main_root"/usr/local "$main_root"/var/usrlocal
-ln -sf var/home "$main_root"/home
-ln -sf var/opt "$main_root"/opt
-ln -sf var/srv "$main_root"/srv
-ln -sf var/roothome "$main_root"/root
-ln -sf ../var/usrlocal "$main_root"/usr/local
-ln -sf var/mnt "$main_root"/mnt
+mv -f $main_root/home $main_root/opt $main_root/srv $main_root/mnt $main_root/var/
+mv -f $main_root/root $main_root/var/roothome
+mv -f $main_root/usr/local $main_root/var/usrlocal
+ln -sf var/home $main_root/home
+ln -sf var/opt $main_root/opt
+ln -sf var/srv $main_root/srv
+ln -sf var/roothome $main_root/root
+ln -sf ../var/usrlocal $main_root/usr/local
+ln -sf var/mnt $main_root/mnt
 
-mkdir -p "$main_root"/etc/ostree/remotes.d
+mkdir --mode=0775 -p $main_root/etc/ostree/remotes.d/
 echo "
 [remote \"altcos\"]
-url=https://altcos.altlinux.org/builds/streams/$branch/archive/repo/
+url=https://altcos.altlinux.org/ALTCOS/streams/$branch/archive/repo/
 gpg-verify=false
-" > "$main_root"/etc/ostree/remotes.d/altcos.conf
-
+" > $main_root/etc/ostree/remotes.d/altcos.conf
 echo "
 # ALTLinux CoreOS Cincinnati backend
 [cincinnati]
 base_url=\"https://altcos.altlinux.org\"
-" > "$main_root"/etc/zincati/config.d/50-altcos-cincinnati.toml
-
+" > $main_root/etc/zincati/config.d/50-altcos-cincinnati.toml
 echo "
 [Match]
 Name=eth0
 
 [Network]
 DHCP=yes
-" > "$main_root"/etc/systemd/network/20-wired.network
+" > $main_root/etc/systemd/network/20-wired.network
 
-sed -i -e 's|#AuthorizedKeysFile\(.*\)|AuthorizedKeysFile\1 .ssh/authorized_keys.d/ignition|' "$main_root"/etc/openssh/sshd_config
+sed -i -e 's|#AuthorizedKeysFile\(.*\)|AuthorizedKeysFile\1 .ssh/authorized_keys.d/ignition|' $main_root/etc/openssh/sshd_config
 
-chroot "$main_root" groupadd altcos
-chroot "$main_root" useradd -g altcos -G docker,wheel -d /var/home/altcos --create-home -s /bin/bash altcos
+chroot $main_root groupadd altcos
+chroot $main_root useradd -g altcos -G docker,wheel -d /var/home/altcos --create-home -s /bin/bash altcos
 
-split_passwd "$main_root"/etc/group "$main_root"/lib/group /tmp/group.$$
-mv /tmp/passwd.$$ "$main_root"/etc/passwd
+split_passwd $main_root/etc/passwd $main_root/lib/passwd /tmp/passwd.$$
+mv /tmp/passwd.$$ $main_root/etc/passwd
 
-sed -e 's/passwd:.*$/& altfiles/' -e 's/group.*$/& altfiles/' -i "$main_root"/etc/nsswitch.conf
+split_group $main_root/etc/group $main_root/lib/group /tmp/group.$$
+mv /tmp/group.$$ $main_root/etc/group
 
-mv "$main_root"/var/lib/rpm "$main_root"/lib/rpm
+sed -e 's/passwd:.*$/& altfiles/' -e 's/group.*$/& altfiles/' -i $main_root/etc/nsswitch.conf
 
-kernel=$(find "$main_root"/boot -type f -name "vmlinuz-*")
+mv $main_root/var/lib/rpm $main_root/lib/rpm
+
+kernel=$(find $main_root/boot/ -type f -name "vmlinuz-*")
 sha=$(sha256sum "$kernel" | awk '{print $1;}')
 mv "$kernel" "$kernel-$sha"
-rm -f "$main_root"/boot/vmlinuz
-rm -f "$main_root"/boot/initrd*
+rm -f $main_root/boot/vmlinuz
+rm -f $main_root/boot/initrd*
 
-
-cat <<EOF > "$main_root"/ostree.conf
+cat <<EOF > $main_root/ostree.conf
 d /run/ostree 0755 root root -
 f /run/ostree/initramfs-mount-var 0755 root root -
 EOF
-chroot "$main_root" dracut --reproducible --gzip -v --no-hostonly \
-	-f /boot/initramfs-"$sha" \
+chroot $main_root dracut --reproducible --gzip -v --no-hostonly \
+	-f /boot/initramfs-$sha \
 	--add ignition --add ostree \
 	--include /ostree.conf /etc/tmpfiles.d/ostree.conf \
 	--include /etc/systemd/network/eth0.network /etc/systemd/network/eth0.network \
 	--omit-drivers=floppy --omit=nfs --omit=lvm --omit=iscsi \
-	--kver $(ls "$main_root"/lib/modules)
+	--kver $(ls $main_root/lib/modules)
 
-rm -f "$main_root"/ostree.conf
-rm -rf "$main_root"/usr/etc
-mv "$main_root"/etc "$main_root"/usr/etc
+rm -f $main_root/ostree.conf
+rm -rf $main_root/usr/etc
+mv $main_root/etc $main_root/usr/etc
 
-rsync -av "$main_root"/var "$version_full_dir"
+rsync -av $main_root/var $version_full_dir
 
-rm -rf "${main_root:?}"/var
+rm -rf $main_root/var
+mkdir $main_root/var
 
-
-if [ ! -d "$main_repo" ]
+if [ ! -d $main_repo ]
 then
-    mkdir -p "$main_repo" && \
-        ostree init --repo="$main_repo" --mode=bare || exit 1
+	mkdir --mode=0775 -p $main_repo
+	ostree init --repo=$main_repo --mode=bare
 fi
 
-commit_id=$(ostree commit --repo="$main_repo" --tree=dir="$main_root" -b "$branch" \
-    --no-xattrs --no-bindings --mode-ro-executables \
-    --add-metadata-string=version="$stream"."$version_date"."$major".0) || exit 1
+commit_id=$(ostree commit --repo=$main_repo --tree=dir=$main_root -b $branch \
+	--no-xattrs --no-bindings --mode-ro-executables \
+	--add-metadata-string=version=$stream.$version_date.$major.0)
 
-cd "$out_dir" || exit 1
-ln -sf "$version_dir" "$commit_id"
-rm -rf "$tmpdir"
-
-# IT'S TEMP SOLUTION
-chmod -R o+w "${version_dir}"
+cd ${out_dir}
+ln -sf $version_dir $commit_id
+rm -rf $tmp_dir

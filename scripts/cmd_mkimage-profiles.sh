@@ -87,7 +87,7 @@ EOF
 #rpm-dir file:$apt_dir $arch dir
 #EOF
 
-cat <<EOF > "$apt_dir"/sources.list."$branch"."$arch"
+cat <<EOF > $apt_dir/sources.list."$branch"."$arch"
 rpm [$ns] http://mirror.yandex.ru/altlinux $pkg_repo_branch/$arch classic
 rpm [$ns] http://mirror.yandex.ru/altlinux $pkg_repo_branch/noarch classic
 rpm-dir file:$apt_dir $arch dir
@@ -95,4 +95,4 @@ EOF
 
 cd "$MKIMAGE_PROFILES_ROOT" || exit 1
 
-make DEBUG=1 APTCONF="$apt_dir"/apt.conf."$branch"."$arch" BRANCH="$branch" ARCH="$arch" vm/acos.tar
+make DEBUG=1 APTCONF=$apt_dir/apt.conf.$branch.$arch BRANCH=$branch ARCH=$arch vm/acos.tar
