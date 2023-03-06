@@ -25,6 +25,10 @@ class ImageItem:
     def location(self) -> pathlib.Path:
         return self._location
 
+    @property
+    def format(self) -> ImageFormat:
+        return self._format
+
 
 class BaseImage(abc.ABC):
     @classmethod
@@ -38,7 +42,7 @@ class BaseImage(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def items(self):
+    def items(self) -> dict[str, ImageItem]:
         raise NotImplementedError
 
 
@@ -52,13 +56,13 @@ class QcowImage(BaseImage):
         self._disk = disk
 
     @classmethod
-    def create(cls, reference: models.Reference, commit: Commit) -> BaseImage:
+    def create(cls, reference: models.Reference, commit: Commit) -> QcowImage:
         cmdlib.runcmd(
             cmd=f"sudo -E {reference.repository.script_root}/cmd_make_qcow2.sh {reference.ostree_ref} {commit.sha256}")
         return QcowImage.all(reference)[-1]
 
     @classmethod
-    def all(cls, reference: models.Reference) -> list[BaseImage]:
+    def all(cls, reference: models.Reference) -> list[QcowImage]:
         qcow_dir = pathlib.Path(reference.image_dir, ImageFormat.QCOW.value)
 
         if not qcow_dir.exists():
@@ -71,6 +75,6 @@ class QcowImage(BaseImage):
 
         return img_list
 
-    def items(self):
-        return {"disk", self._disk}
+    def items(self) -> dict[str, ImageItem]:
+        return {"disk": self._disk}
 

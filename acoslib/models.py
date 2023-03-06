@@ -168,7 +168,7 @@ class SubReference(Reference):
     )
 
     def __init__(self, repository: Repository, arch: Arch, stream: Stream,
-                 name: str, altconf: str = None, root_dir: str = None):
+                 name: str, altconf: str | pathlib.Path = None, root_dir: str | pathlib.Path = None):
         super().__init__(repository, arch, stream)
 
         self._name = name
@@ -202,7 +202,7 @@ class SubReference(Reference):
         if len(parts) != 4:
             raise ValueError(f"Invalid format of reference. Reference must be like `altcos/x86_64/Sisyphus/k8s`")
 
-        return cls(repository, Arch(parts[1]), Stream(parts[2].lower()), parts[3])
+        return cls(repository, Arch(parts[1]), Stream(parts[2].lower()), parts[3], **extra)
 
     @classmethod
     def from_baseref(cls, base: Reference, **extra) -> SubReference:
