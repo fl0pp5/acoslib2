@@ -28,7 +28,7 @@ mkdir -p "$STREAMS_ROOT/$subref_dir" || exit 1
 
 if [ -n "$source_altconf" ]
 then
-    cp "$source_altconf" "$STREAMS_ROOT/$subref_dir/altcos.yml" || exit 1
+    cp "$source_altconf" "$STREAMS_ROOT/$subref_dir/altconf.yml" || exit 1
 fi
 
 if [ -n "$source_root_dir" ]

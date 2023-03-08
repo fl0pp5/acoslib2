@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import abc
 import datetime
 import pathlib
 import re
@@ -9,7 +8,7 @@ import typing
 import gi
 import yaml
 
-from acoslib.images import QcowImage
+from acoslib.images import QcowImage, BaseImage
 
 gi.require_version("OSTree", "1.0")
 
@@ -113,12 +112,20 @@ class Reference:
         return pathlib.Path(str(self.ostree_ref).lower())
 
     @property
-    def repo_path(self) -> pathlib.Path:
+    def repo_dir(self) -> pathlib.Path:
         return pathlib.Path(self._repository.stream_root,
                             self._repository.osname,
                             self._arch.value,
                             self._stream.value,
                             "bare", "repo")
+
+    @property
+    def image_dir(self) -> pathlib.Path:
+        return pathlib.Path(self.repository.stream_root, self.ostree_ref_dir, "images")
+
+    @property
+    def mkimage_dir(self) -> pathlib.Path:
+        return pathlib.Path(self.repository.stream_root, self.ostree_baseref, "mkimage-profiles")
 
     @property
     def version(self, commit_id: str = None) -> str:
@@ -137,10 +144,6 @@ class Reference:
 
         return f"{stream}.{date}.{major}.{minor}"
 
-    @property
-    def image_dir(self) -> pathlib.Path:
-        return pathlib.Path(self.repository.stream_root, self.ostree_ref_dir, "images")
-
     @classmethod
     def from_ostree(cls, repository: Repository, ostree_ref: str, **extra) -> Reference:
         parts = ostree_ref.split("/")
@@ -150,15 +153,24 @@ class Reference:
         return cls(repository, Arch(parts[1]), Stream(parts[2]))
 
     def ostree_repo_exists(self) -> bool:
-        repo_path = str(self.repo_path)
+        repo_dir = str(self.repo_dir)
         try:
-            OSTree.Repo.new(Gio.File.new_for_path(repo_path)).open(None)
+            OSTree.Repo.new(Gio.File.new_for_path(repo_dir)).open(None)
         except gi.repository.GLib.GError:
             return False
         return True
 
-    def create(self) -> None:
+    def create(self) -> Reference:
         cmdlib.runcmd(f"sudo -E {self.repository.script_root}/cmd_rootfs2repo.sh {self.ostree_ref}")
+        return self
+
+    def mkprofile(self) -> Reference:
+        cmdlib.runcmd(
+            f"{self.repository.script_root}/cmd_mkimage-profiles.sh "
+            f"{self.stream.value} "
+            f"{self.arch.value}"
+        )
+        return self
 
 
 class SubReference(Reference):
@@ -214,7 +226,7 @@ class SubReference(Reference):
     def from_baseref(cls, base: Reference, **extra) -> SubReference:
         return cls(base.repository, base.arch, base.stream, **extra)
 
-    def create(self) -> None:
+    def create(self) -> Reference:
         script_root = self.repository.script_root
         stream_root = self.repository.stream_root
 
@@ -240,6 +252,8 @@ class SubReference(Reference):
 
         cmdlib.runcmd(
             f"{script_root}/cmd_ostree_commit.sh {self.ostree_ref} {last_commit_id} {self.version}")
+
+        return self
 
 
 class Commit:
@@ -282,7 +296,7 @@ class Commit:
 
     def all(self) -> list[Commit] | None:
         cp = cmdlib.runcmd(
-            f"ostree log {self._reference.ostree_ref} --repo {self._reference.repo_path}"
+            f"ostree log {self._reference.ostree_ref} --repo {self._reference.repo_dir}"
         )
 
         info = self._COMMIT_INFO_RE.findall(cp.stdout.decode())
@@ -357,7 +371,7 @@ class AltConf:
         self._subref: SubReference = subref
         self._path: pathlib.Path = pathlib.Path(self.subref.repository.stream_root,
                                                 subref.ostree_ref_dir,
-                                                "altcos.yml")
+                                                "altconf.yml")
         self._env = {}
 
         with self._path.open() as file:
@@ -395,11 +409,9 @@ class AltConf:
 
                 match k:
                     case "rpms":
-                        pass
                         self._rpm_act(v)
                     case "env":
                         self._env_act(v, merged_dir)
-                        pass
                     case "podman":
                         self._podman_act(v, merged_dir)
                     case "butane":
@@ -486,8 +498,8 @@ class Image:
     def __init__(self, reference: Reference) -> None:
         self._reference: Reference = reference
 
-    def create(self, img_format: ImageFormat, commit: Commit):
+    def create(self, img_format: ImageFormat, commit: Commit) -> BaseImage:
         return self._FACTORY_LIST.get(img_format).create(self._reference, commit)
 
-    def all(self, img_format: ImageFormat):
+    def all(self, img_format: ImageFormat) -> list[BaseImage]:
         return self._FACTORY_LIST.get(img_format).all(self._reference)

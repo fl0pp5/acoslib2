@@ -34,7 +34,7 @@ vars_path="$ref_dir/vars"
 add_metadata=
 if ! is_base_ref "$ref"
 then
-    altcos_file="$ref_dir/altcos.yml"
+    altcos_file="$ref_dir/altconf.yml"
 
     add_metadata=" --add-metadata-string=parent_commit_id=$commit_id"
     add_metadata="$add_metadata --add-metadata-string=parent_version=$version"
