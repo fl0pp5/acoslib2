@@ -33,35 +33,36 @@ class Repository:
         "_mkimage_root",
     )
 
-    def __init__(self, osname: str, root: str, stream_root: str, script_root: str, mkimage_root: str):
-        self._osname = osname
-        self._root = root
-        self._stream_root = stream_root
-        self._script_root = script_root
-        self._mkimage_root = mkimage_root
-
-        for attr in self.__slots__:
-            if getattr(self, attr) is None:
-                raise ValueError(f"Attribute {attr} is required")
+    def __init__(self,
+                 osname: str,
+                 root: str | pathlib.Path,
+                 stream_root: str | pathlib.Path,
+                 script_root: str | pathlib.Path,
+                 mkimage_root: str | pathlib.Path) -> None:
+        self._osname: str = osname
+        self._root: pathlib.Path = pathlib.Path(root)
+        self._stream_root: pathlib.Path = pathlib.Path(stream_root)
+        self._script_root: pathlib.Path = pathlib.Path(script_root)
+        self._mkimage_root: pathlib.Path = pathlib.Path(mkimage_root)
 
     @property
     def osname(self) -> str:
         return self._osname
 
     @property
-    def root(self) -> str:
+    def root(self) -> pathlib.Path:
         return self._root
 
     @property
-    def stream_root(self) -> str:
+    def stream_root(self) -> pathlib.Path:
         return self._stream_root
 
     @property
-    def script_root(self) -> str:
+    def script_root(self) -> pathlib.Path:
         return self._script_root
 
     @property
-    def mkimage_root(self) -> str:
+    def mkimage_root(self) -> pathlib.Path:
         return self._mkimage_root
 
 
@@ -76,10 +77,10 @@ class Reference:
         "_stream",
     )
 
-    def __init__(self, repository: Repository, arch: Arch, stream: Stream):
-        self._repository = repository
-        self._arch = arch
-        self._stream = stream
+    def __init__(self, repository: Repository, arch: Arch, stream: Stream) -> None:
+        self._repository: Repository = repository
+        self._arch: Arch = arch
+        self._stream: Stream = stream
 
     @property
     def repository(self) -> Repository:
@@ -120,7 +121,7 @@ class Reference:
                             "bare", "repo")
 
     @property
-    def version(self, commit_id: str = None):
+    def version(self, commit_id: str = None) -> str:
         if not commit_id:
             date, major, minor = datetime.datetime.now().strftime("%Y%m%d"), 0, 0
         else:
@@ -167,13 +168,18 @@ class SubReference(Reference):
         "_root_dir"
     )
 
-    def __init__(self, repository: Repository, arch: Arch, stream: Stream,
-                 name: str, altconf: str | pathlib.Path = None, root_dir: str | pathlib.Path = None):
+    def __init__(self,
+                 repository: Repository,
+                 arch: Arch,
+                 stream: Stream,
+                 name: str,
+                 altconf: str | pathlib.Path = None,
+                 root_dir: str | pathlib.Path = None) -> None:
         super().__init__(repository, arch, stream)
 
-        self._name = name
-        self._altconf = pathlib.Path(altconf)
-        self._root_dir = pathlib.Path(root_dir)
+        self._name: str = name
+        self._altconf: pathlib.Path = pathlib.Path(altconf)
+        self._root_dir: pathlib.Path = pathlib.Path(root_dir)
 
         if self._altconf and not self._altconf.exists():
             raise FileExistsError(f"altcos config file {self._altconf} not exists")
@@ -247,7 +253,7 @@ class Commit:
 
     _COMMIT_INFO_RE = re.compile(r"(commit .*\n(Parent:.*\n|)ContentChecksum: .*\nDate:.*\nVersion: .*\n)")
 
-    def __init__(self, reference: Reference, **kwargs):
+    def __init__(self, reference: Reference, **kwargs) -> None:
         self._reference: Reference = reference
         self._sha256: str = kwargs.get("sha256")
         self._version: str = kwargs.get("version")
@@ -347,11 +353,11 @@ class AltConf:
         "_env",
     )
 
-    def __init__(self, subref: SubReference):
-        self._subref = subref
-        self._path = pathlib.Path(self.subref.repository.stream_root,
-                                  subref.ostree_ref_dir,
-                                  "altcos.yml")
+    def __init__(self, subref: SubReference) -> None:
+        self._subref: SubReference = subref
+        self._path: pathlib.Path = pathlib.Path(self.subref.repository.stream_root,
+                                                subref.ostree_ref_dir,
+                                                "altcos.yml")
         self._env = {}
 
         with self._path.open() as file:
@@ -478,7 +484,7 @@ class Image:
     )
 
     def __init__(self, reference: Reference) -> None:
-        self._reference = reference
+        self._reference: Reference = reference
 
     def create(self, img_format: ImageFormat, commit: Commit):
         return self._FACTORY_LIST.get(img_format).create(self._reference, commit)

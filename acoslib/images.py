@@ -16,7 +16,7 @@ class ImageItem:
 
     def __init__(self, location: str | pathlib.Path, img_format: models.ImageFormat) -> None:
         self._location: pathlib.Path = pathlib.Path(location)
-        self._format = img_format
+        self._format: models.ImageFormat = img_format
 
         if not self._location.exists():
             raise FileExistsError(f"image item {self._location} not exists")
@@ -52,8 +52,8 @@ class QcowImage(BaseImage):
         "_disk",
     )
 
-    def __init__(self, disk: ImageItem):
-        self._disk = disk
+    def __init__(self, disk: ImageItem) -> None:
+        self._disk: ImageItem = disk
 
     @classmethod
     def create(cls, reference: models.Reference, commit: Commit) -> QcowImage:
