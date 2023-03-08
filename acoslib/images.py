@@ -56,13 +56,13 @@ class QcowImage(BaseImage):
         self._disk: ImageItem = disk
 
     @classmethod
-    def create(cls, reference: models.Reference, commit: Commit) -> QcowImage:
+    def create(cls, reference: models.Reference, commit: Commit) -> BaseImage:
         cmdlib.runcmd(
             cmd=f"sudo -E {reference.repository.script_root}/cmd_make_qcow2.sh {reference.ostree_ref} {commit.sha256}")
         return QcowImage.all(reference)[-1]
 
     @classmethod
-    def all(cls, reference: models.Reference) -> list[QcowImage]:
+    def all(cls, reference: models.Reference) -> list[BaseImage]:
         qcow_dir = pathlib.Path(reference.image_dir, ImageFormat.QCOW.value)
 
         if not qcow_dir.exists():
