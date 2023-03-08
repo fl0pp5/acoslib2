@@ -36,7 +36,7 @@ sudo rm -rf ./var/lib/apt ./var/cache/apt
 check_apt_dirs "$PWD"
 
 sudo rsync -av var "$var_dir"
-sudo rsync -avd var/lib/rpm usr/share
+sudo rsync -avd lib/rpm usr/share
 sudo rm -rf ./var ./run
 sudo mkdir ./var
 

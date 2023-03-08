@@ -190,8 +190,8 @@ class SubReference(Reference):
         super().__init__(repository, arch, stream)
 
         self._name: str = name
-        self._altconf: pathlib.Path = pathlib.Path(altconf)
-        self._root_dir: pathlib.Path = pathlib.Path(root_dir)
+        self._altconf: pathlib.Path = pathlib.Path(altconf) if altconf else ""
+        self._root_dir: pathlib.Path = pathlib.Path(root_dir) if root_dir else ""
 
         if self._altconf and not self._altconf.exists():
             raise FileExistsError(f"altcos config file {self._altconf} not exists")
