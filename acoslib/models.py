@@ -187,7 +187,7 @@ class Reference:
 
     def sync(self, commit: Commit) -> Reference:
         cmdlib.runcmd(f"{self.repository.script_root}/cmd_sync_updates.sh "
-                      f"{self.ostree_ref} {commit.sha256} {commit.version}")
+                      f"{self.ostree_ref} {commit.version}")
         return self
 
     def clear_roots(self) -> Reference:

@@ -15,8 +15,7 @@ source "$SCRIPTS_ROOT"/functions.sh || exit 1
 exec 2>&1
 ref=$1
 ref_dir=$(ref_to_dir "$ref")
-commit_id=$2
-version=$3
+version=$2
 
 version_var_subdir=$(version_var_subdir $version)
 branch_path="$STREAMS_ROOT/$ref_dir"
