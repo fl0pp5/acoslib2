@@ -5,6 +5,7 @@ import os
 import pathlib
 import re
 import subprocess
+import tempfile
 import typing
 
 import gi
@@ -14,7 +15,7 @@ gi.require_version("OSTree", "1.0")
 
 from gi.repository import OSTree, Gio
 
-from acoslib.types import Arch, Stream, ImageFormat
+from acoslib.types import Arch, Stream, ImageFormat, Version
 from acoslib.images import QcowImage, BaseImage
 from acoslib.utils import cmdlib
 
@@ -133,12 +134,12 @@ class Reference:
         return pathlib.Path(self.repository.stream_root, self.ostree_baseref, "mkimage-profiles")
 
     @property
-    def version(self, commit_id: str = None) -> str:
-        if not commit_id:
-            date, major, minor = datetime.datetime.now().strftime("%Y%m%d"), 0, 0
+    def version(self, commit: Commit = None) -> Version:
+        if not commit:
+            return Version(self.stream.value, datetime.datetime.now().strftime("%Y%m%d"), 0, 0)
         else:
             vars_path = pathlib.Path(self.repository.stream_root, self.ostree_ref, "vars")
-            commit_link = pathlib.Path(vars_path, commit_id)
+            commit_link = pathlib.Path(vars_path, commit.sha256)
 
             link_target = commit_link.readlink()
 
@@ -147,7 +148,11 @@ class Reference:
         path = str(self.ostree_ref).lower().split('/')
         stream = '_'.join(path[2:])
 
-        return f"{stream}.{date}.{major}.{minor}"
+        return Version(stream, date, major, minor)
+
+    @property
+    def merged_dir(self) -> pathlib.Path:
+        return pathlib.Path(self.repository.stream_root, self.ostree_ref_dir, "roots", "merged")
 
     @classmethod
     def from_ostree(cls, repository: Repository, ostree_ref: str, **extra) -> Reference:
@@ -165,14 +170,6 @@ class Reference:
             return False
         return True
 
-    def create(self) -> Reference:
-        if not self.mkimage_dir.exists():
-            raise ImageProfileExistsError(
-                f"Image profile for {self.ostree_ref} not exists. Use `mkprofile` method firstly")
-
-        cmdlib.runcmd(f"sudo -E {self.repository.script_root}/cmd_rootfs2repo.sh {self.ostree_ref}")
-        return self
-
     def mkprofile(self) -> Reference:
         cmdlib.runcmd(
             f"{self.repository.script_root}/cmd_mkimage-profiles.sh "
@@ -181,12 +178,52 @@ class Reference:
         )
         return self
 
+    def mkrepo(self) -> Reference:
+        cmdlib.runcmd(f"sudo -E {self.repository.script_root}/cmd_rootfs2repo.sh {self.ostree_ref}")
+        return self
+
+    def checkout(self, commit: Commit) -> Reference:
+        cmdlib.runcmd(f"{self.repository.script_root}/cmd_ostree_checkout.sh {self.ostree_ref} {commit.sha256}")
+        return self
+
+    def sync(self, commit: Commit) -> Reference:
+        cmdlib.runcmd(f"{self.repository.script_root}/cmd_sync_updates.sh "
+                      f"{self.ostree_ref} {commit.sha256} {commit.version}")
+        return self
+
+    def clear_roots(self) -> Reference:
+        cmdlib.runcmd(f"{self.repository.script_root}/cmd_clear_roots.sh {self.ostree_ref}")
+        return self
+
+    def commit(self, commit: Commit) -> Reference:
+        cmdlib.runcmd(f"{self.repository.script_root}/cmd_ostree_commit.sh "
+                      f"{self.ostree_ref} {commit.sha256} {commit.version}")
+        return self
+
+    def create(self) -> Reference:
+        if not self.mkimage_dir.exists():
+            raise ImageProfileExistsError(
+                f"Image profile for {self.ostree_ref} not exists. Use `mkprofile` method firstly")
+
+        return self.mkrepo()
+
+    def update(self) -> Reference:
+        commit = Commit(self).all()[-1]
+
+        self.clear_roots().checkout(commit)
+
+        RPM(self).update().upgrade().update_kernel()
+
+        commit.version.major = commit.version.major + 1
+
+        return self.sync(commit).commit(commit)
+
 
 class SubReference(Reference):
     __slots__ = (
         "_name",
-        "_altconf",
-        "_root_dir"
+        "_src_altconf",
+        "_src_root_dir"
     )
 
     def __init__(self,
@@ -199,14 +236,14 @@ class SubReference(Reference):
         super().__init__(repository, arch, stream)
 
         self._name = name
-        self._altconf = pathlib.Path(altconf) if altconf else ""
-        self._root_dir = pathlib.Path(root_dir) if root_dir else ""
+        self._src_altconf = pathlib.Path(altconf) if altconf else ""
+        self._src_root_dir = pathlib.Path(root_dir) if root_dir else ""
 
-        if self._altconf and not self._altconf.exists():
-            raise FileExistsError(f"altcos config file {self._altconf} not exists")
+        if self._src_altconf and not self._src_altconf.exists():
+            raise FileExistsError(f"altcos config file {self._src_altconf} not exists")
 
-        if self._root_dir and not self._root_dir.exists():
-            raise FileExistsError(f"root directory {self._root_dir} not exists")
+        if self._src_root_dir and not self._src_root_dir.exists():
+            raise FileExistsError(f"root directory {self._src_root_dir} not exists")
 
     @property
     def ostree_ref(self) -> pathlib.Path:
@@ -216,12 +253,12 @@ class SubReference(Reference):
                             self._name)
 
     @property
-    def altconf(self) -> pathlib.Path:
-        return self._altconf
+    def src_altconf(self) -> pathlib.Path:
+        return self._src_altconf
 
     @property
-    def root_dir(self) -> pathlib.Path:
-        return self._root_dir
+    def src_root_dir(self) -> pathlib.Path:
+        return self._src_root_dir
 
     @classmethod
     def from_ostree(cls, repository: Repository, ostree_ref: str, **extra) -> Reference:
@@ -235,37 +272,31 @@ class SubReference(Reference):
     def from_baseref(cls, base: Reference, **extra) -> SubReference:
         return cls(base.repository, base.arch, base.stream, **extra)
 
+    def make_subref_files(self):
+        cmdlib.runcmd(f"sudo -E {self.repository.script_root}/cmd_create_subref_files.sh "
+                      f"{self.ostree_ref_dir} "
+                      f"{self.src_altconf} "
+                      f"{self.src_root_dir}")
+
+        return self
+
+    def checkout(self, commit: Commit) -> Reference:
+        cmdlib.runcmd(f"{self.repository.script_root}/cmd_ostree_checkout.sh "
+                      f"{self.ostree_baseref} {commit.sha256} {self.ostree_ref} all")
+
+        return self
+
     def create(self) -> Reference:
         if not self.ostree_repo_exists():
             raise BareRepoExistsError(f"Bare repo does not exist for {self.ostree_ref}")
 
-        script_root = self.repository.script_root
-        stream_root = self.repository.stream_root
+        commit = Commit(super()).all()[-1]
 
-        if self._root_dir or self._altconf:
-            cmdlib.runcmd(
-                f"sudo -E {script_root}/cmd_create_subref_files.sh "
-                f"{self.ostree_ref_dir} "
-                f"{self.altconf} "
-                f"{self.root_dir}")
+        self.make_subref_files().checkout(commit)
 
-        merged_dir = pathlib.Path(stream_root, self.ostree_ref_dir, "roots", "merged")
+        AltConf(self).exec(str(self.merged_dir))
 
-        last_commit = Commit(super()).all()[-1]
-        last_commit_id = last_commit.sha256
-
-        cmdlib.runcmd(
-            f"{script_root}/cmd_ostree_checkout.sh {self.ostree_baseref} {last_commit_id} {self.ostree_ref} all")
-
-        AltConf(self).exec(str(merged_dir))
-
-        cmdlib.runcmd(
-            f"{script_root}/cmd_sync_updates.sh {self.ostree_ref} {last_commit_id} {self.version}")
-
-        cmdlib.runcmd(
-            f"{script_root}/cmd_ostree_commit.sh {self.ostree_ref} {last_commit_id} {self.version}")
-
-        return self
+        return self.sync(commit).commit(commit)
 
 
 class Commit:
@@ -295,7 +326,7 @@ class Commit:
         return self._sha256
 
     @property
-    def version(self) -> str:
+    def version(self) -> Version:
         return self._version
 
     @property
@@ -307,9 +338,7 @@ class Commit:
         return self._parent_id
 
     def all(self) -> list[Commit] | None:
-        cp = cmdlib.runcmd(
-            f"ostree log {self._reference.ostree_ref} --repo {self._reference.repo_dir}"
-        )
+        cp = cmdlib.runcmd(f"ostree log {self.reference.ostree_ref} --repo {self.reference.repo_dir}")
 
         info = self._COMMIT_INFO_RE.findall(cp.stdout.decode())
 
@@ -340,34 +369,16 @@ class Commit:
 
             commit_list.append(Commit(self._reference,
                                       sha256=sha256,
-                                      version=version,
+                                      version=Version.from_str(version),
                                       date=date,
                                       parent_id=parent_id))
 
         return sorted(commit_list,
                       key=lambda item: item.date)
 
-    def create(self, commit_id: str, version: str) -> None:
-        ostree_baseref = self.reference.ostree_baseref
-        ostree_ref = self.reference.ostree_ref
-        scripts_root = self._reference.repository.script_root
-
-        if ostree_baseref != ostree_ref:
-            cmdlib.runcmd(
-                cmd=f"{scripts_root}/cmd_ostree_checkout.sh {ostree_baseref} {commit_id} {self.reference} all"
-            )
-        else:
-            cmdlib.runcmd(
-                cmd=f"{scripts_root}/cmd_ostree_checkout.sh {ostree_baseref} {commit_id}"
-            )
-
-        cmdlib.runcmd(
-            cmd=f"{scripts_root}/cmd_sync_updates.sh {ostree_ref} {commit_id} {version}"
-        )
-
-        cmdlib.runcmd(
-            cmd=f"{scripts_root}/cmd_ostree_commit.sh {ostree_ref} {commit_id} {version}"
-        )
+    def create(self) -> Commit:
+        self.reference.checkout(self).sync(self).commit(self)
+        return self
 
 
 class AltConf:
@@ -515,3 +526,47 @@ class Image:
 
     def all(self, img_format: ImageFormat) -> list[BaseImage]:
         return self._FACTORY_LIST.get(img_format).all(self._reference)
+
+
+class RPM:
+    __slots__ = (
+        "_reference",
+        "_updated",
+        "_pkgs",
+    )
+
+    def __init__(self, reference: Reference) -> None:
+        self._reference = reference
+        self._updated = False
+        self._pkgs = None
+
+    @property
+    def updated(self) -> bool:
+        return self._updated
+
+    @property
+    def pkgs(self) -> list[str]:
+        return self._pkgs
+
+    def install(self, *pkgs: str) -> subprocess.CompletedProcess:
+        return cmdlib.runcmd(f"stdbuf -oL {self._reference.repository.script_root}/cmd_apt-get_install.sh "
+                             f"{self._reference.ostree_ref} {' '.join(pkgs)}")
+
+    def update(self) -> RPM:
+        cmdlib.runcmd(f"stdbuf -oL {self._reference.repository.script_root}/cmd_apt-get_update.sh "
+                      f"{self._reference.ostree_ref}")
+        return self
+
+    def upgrade(self) -> RPM:
+        with tempfile.NamedTemporaryFile(dir="/tmp", prefix="ostree_") as tmpfile:
+            output = cmdlib.runcmd(f"{self._reference.repository.script_root}/cmd_apt-get_dist-upgrade.sh "
+                                   f"{self._reference.ostree_ref} {tmpfile.name}")
+            self._updated = "0 upgraded, 0 newly installed, 0 removed and 0 not upgraded" in output.stdout.decode()
+            self._pkgs = tmpfile.read().decode().split("\n")
+
+        return self
+
+    def update_kernel(self) -> RPM:
+        cmdlib.runcmd(f"{self._reference.repository.script_root}/cmd_update_kernel.sh {self._reference.ostree_ref}")
+
+        return self

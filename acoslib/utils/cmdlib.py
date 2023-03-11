@@ -24,4 +24,3 @@ def runcmd(cmd: str, quite: bool = False) -> subprocess.CompletedProcess:
         logging.info(f" STDERR :: {cp.stderr.decode()}")
 
     return cp
-
