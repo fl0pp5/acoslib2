@@ -34,7 +34,7 @@ class ImageItem:
 class BaseImage(abc.ABC):
     @classmethod
     @abc.abstractmethod
-    def create(cls, reference: models.Reference, commit_id: Commit) -> BaseImage:
+    def create(cls, reference: models.Reference, commit_id: str) -> BaseImage:
         raise NotImplementedError
 
     @classmethod
@@ -57,9 +57,9 @@ class QcowImage(BaseImage):
         self._disk = disk
 
     @classmethod
-    def create(cls, reference: models.Reference, commit: Commit) -> BaseImage:
+    def create(cls, reference: models.Reference, commit_id: str) -> BaseImage:
         cmdlib.runcmd(
-            cmd=f"sudo -E {reference.repository.script_root}/cmd_make_qcow2.sh {reference.ostree_ref} {commit.sha256}")
+            cmd=f"sudo -E {reference.repository.script_root}/cmd_make_qcow2.sh {reference.ostree_ref} {commit_id}")
         return QcowImage.all(reference)[-1]
 
     @classmethod

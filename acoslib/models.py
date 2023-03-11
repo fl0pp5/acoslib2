@@ -5,7 +5,6 @@ import os
 import pathlib
 import re
 import subprocess
-import tempfile
 import typing
 
 import gi
@@ -212,9 +211,9 @@ class Reference:
 
         self.clear_roots().checkout(commit)
 
-        RPM(self).update().upgrade().update_kernel()
+        Apt(self).update().upgrade().update_kernel()
 
-        commit.version.major = commit.version.major + 1
+        commit.version.major += 1
 
         return self.sync(commit).commit(commit)
 
@@ -521,52 +520,37 @@ class Image:
     def __init__(self, reference: Reference) -> None:
         self._reference = reference
 
-    def create(self, img_format: ImageFormat, commit: Commit) -> BaseImage:
-        return self._FACTORY_LIST.get(img_format).create(self._reference, commit)
+    def create(self, img_format: ImageFormat, commit_id: str) -> BaseImage:
+        return self._FACTORY_LIST.get(img_format).create(self._reference, commit_id)
 
     def all(self, img_format: ImageFormat) -> list[BaseImage]:
         return self._FACTORY_LIST.get(img_format).all(self._reference)
 
 
-class RPM:
+class Apt:
     __slots__ = (
         "_reference",
-        "_updated",
-        "_pkgs",
     )
 
     def __init__(self, reference: Reference) -> None:
         self._reference = reference
-        self._updated = False
-        self._pkgs = None
 
-    @property
-    def updated(self) -> bool:
-        return self._updated
-
-    @property
-    def pkgs(self) -> list[str]:
-        return self._pkgs
-
-    def install(self, *pkgs: str) -> subprocess.CompletedProcess:
+    def install(self, *pkgs) -> subprocess.CompletedProcess:
         return cmdlib.runcmd(f"stdbuf -oL {self._reference.repository.script_root}/cmd_apt-get_install.sh "
-                             f"{self._reference.ostree_ref} {' '.join(pkgs)}")
+                             f"{self._reference.ostree_ref} {' '.join(*pkgs)}")
 
-    def update(self) -> RPM:
+    def update(self) -> Apt:
         cmdlib.runcmd(f"stdbuf -oL {self._reference.repository.script_root}/cmd_apt-get_update.sh "
                       f"{self._reference.ostree_ref}")
         return self
 
-    def upgrade(self) -> RPM:
-        with tempfile.NamedTemporaryFile(dir="/tmp", prefix="ostree_") as tmpfile:
-            output = cmdlib.runcmd(f"{self._reference.repository.script_root}/cmd_apt-get_dist-upgrade.sh "
-                                   f"{self._reference.ostree_ref} {tmpfile.name}")
-            self._updated = "0 upgraded, 0 newly installed, 0 removed and 0 not upgraded" in output.stdout.decode()
-            self._pkgs = tmpfile.read().decode().split("\n")
+    def upgrade(self) -> Apt:
+        cmdlib.runcmd(f"{self._reference.repository.script_root}/cmd_apt-get_dist-upgrade.sh "
+                      f"{self._reference.ostree_ref}")
 
         return self
 
-    def update_kernel(self) -> RPM:
+    def update_kernel(self) -> Apt:
         cmdlib.runcmd(f"{self._reference.repository.script_root}/cmd_update_kernel.sh {self._reference.ostree_ref}")
 
         return self
