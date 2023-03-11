@@ -4,18 +4,18 @@ import datetime
 import os
 import pathlib
 import re
+import subprocess
 import typing
 
 import gi
 import yaml
-
-from acoslib.images import QcowImage, BaseImage
 
 gi.require_version("OSTree", "1.0")
 
 from gi.repository import OSTree, Gio
 
 from acoslib.types import Arch, Stream, ImageFormat
+from acoslib.images import QcowImage, BaseImage
 from acoslib.utils import cmdlib
 
 
@@ -67,6 +67,10 @@ class Repository:
 
 
 class BareRepoExistsError(Exception):
+    pass
+
+
+class ImageProfileExistsError(Exception):
     pass
 
 
@@ -162,6 +166,10 @@ class Reference:
         return True
 
     def create(self) -> Reference:
+        if not self.mkimage_dir.exists():
+            raise ImageProfileExistsError(
+                f"Image profile for {self.ostree_ref} not exists. Use `mkprofile` method firstly")
+
         cmdlib.runcmd(f"sudo -E {self.repository.script_root}/cmd_rootfs2repo.sh {self.ostree_ref}")
         return self
 
