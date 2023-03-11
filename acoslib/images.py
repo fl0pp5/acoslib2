@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import os
 import pathlib
 
 from acoslib import models
@@ -14,9 +15,9 @@ class ImageItem:
         "_format",
     )
 
-    def __init__(self, location: str | pathlib.Path, img_format: models.ImageFormat) -> None:
-        self._location: pathlib.Path = pathlib.Path(location)
-        self._format: models.ImageFormat = img_format
+    def __init__(self, location: str | os.PathLike, img_format: models.ImageFormat) -> None:
+        self._location = pathlib.Path(location)
+        self._format = img_format
 
         if not self._location.exists():
             raise FileExistsError(f"image item {self._location} not exists")
@@ -53,7 +54,7 @@ class QcowImage(BaseImage):
     )
 
     def __init__(self, disk: ImageItem) -> None:
-        self._disk: ImageItem = disk
+        self._disk = disk
 
     @classmethod
     def create(cls, reference: models.Reference, commit: Commit) -> BaseImage:

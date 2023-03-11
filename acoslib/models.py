@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import os
 import pathlib
 import re
 import typing
@@ -34,15 +35,15 @@ class Repository:
 
     def __init__(self,
                  osname: str,
-                 root: str | pathlib.Path,
-                 stream_root: str | pathlib.Path,
-                 script_root: str | pathlib.Path,
-                 mkimage_root: str | pathlib.Path) -> None:
-        self._osname: str = osname
-        self._root: pathlib.Path = pathlib.Path(root)
-        self._stream_root: pathlib.Path = pathlib.Path(stream_root)
-        self._script_root: pathlib.Path = pathlib.Path(script_root)
-        self._mkimage_root: pathlib.Path = pathlib.Path(mkimage_root)
+                 root: str | os.PathLike,
+                 stream_root: str | os.PathLike,
+                 script_root: str | os.PathLike,
+                 mkimage_root: str | os.PathLike) -> None:
+        self._osname = osname
+        self._root = pathlib.Path(root)
+        self._stream_root = pathlib.Path(stream_root)
+        self._script_root = pathlib.Path(script_root)
+        self._mkimage_root = pathlib.Path(mkimage_root)
 
     @property
     def osname(self) -> str:
@@ -65,7 +66,7 @@ class Repository:
         return self._mkimage_root
 
 
-class BareRepoExistenceError(Exception):
+class BareRepoExistsError(Exception):
     pass
 
 
@@ -77,9 +78,9 @@ class Reference:
     )
 
     def __init__(self, repository: Repository, arch: Arch, stream: Stream) -> None:
-        self._repository: Repository = repository
-        self._arch: Arch = arch
-        self._stream: Stream = stream
+        self._repository = repository
+        self._arch = arch
+        self._stream = stream
 
     @property
     def repository(self) -> Repository:
@@ -185,13 +186,13 @@ class SubReference(Reference):
                  arch: Arch,
                  stream: Stream,
                  name: str,
-                 altconf: str | pathlib.Path = None,
-                 root_dir: str | pathlib.Path = None) -> None:
+                 altconf: str | os.PathLike = None,
+                 root_dir: str | os.PathLike = None) -> None:
         super().__init__(repository, arch, stream)
 
-        self._name: str = name
-        self._altconf: pathlib.Path = pathlib.Path(altconf) if altconf else ""
-        self._root_dir: pathlib.Path = pathlib.Path(root_dir) if root_dir else ""
+        self._name = name
+        self._altconf = pathlib.Path(altconf) if altconf else ""
+        self._root_dir = pathlib.Path(root_dir) if root_dir else ""
 
         if self._altconf and not self._altconf.exists():
             raise FileExistsError(f"altcos config file {self._altconf} not exists")
@@ -227,6 +228,9 @@ class SubReference(Reference):
         return cls(base.repository, base.arch, base.stream, **extra)
 
     def create(self) -> Reference:
+        if not self.ostree_repo_exists():
+            raise BareRepoExistsError(f"Bare repo does not exist for {self.ostree_ref}")
+
         script_root = self.repository.script_root
         stream_root = self.repository.stream_root
 
@@ -268,11 +272,11 @@ class Commit:
     _COMMIT_INFO_RE = re.compile(r"(commit .*\n(Parent:.*\n|)ContentChecksum: .*\nDate:.*\nVersion: .*\n)")
 
     def __init__(self, reference: Reference, **kwargs) -> None:
-        self._reference: Reference = reference
-        self._sha256: str = kwargs.get("sha256")
-        self._version: str = kwargs.get("version")
-        self._date: datetime.datetime = kwargs.get("date")
-        self._parent_id: str = kwargs.get("parent_id")
+        self._reference = reference
+        self._sha256 = kwargs.get("sha256")
+        self._version = kwargs.get("version")
+        self._date = kwargs.get("date")
+        self._parent_id = kwargs.get("parent_id")
 
     @property
     def reference(self) -> Reference:
@@ -368,10 +372,10 @@ class AltConf:
     )
 
     def __init__(self, subref: SubReference) -> None:
-        self._subref: SubReference = subref
-        self._path: pathlib.Path = pathlib.Path(self.subref.repository.stream_root,
-                                                subref.ostree_ref_dir,
-                                                "altconf.yml")
+        self._subref = subref
+        self._path = pathlib.Path(self.subref.repository.stream_root,
+                                  subref.ostree_ref_dir,
+                                  "altconf.yml")
         self._env = {}
 
         with self._path.open() as file:
@@ -383,7 +387,7 @@ class AltConf:
         self._mtime = self._path.lstat().st_mtime
 
         if not self._subref.ostree_repo_exists():
-            raise BareRepoExistenceError(f"Bare repo does not exist for {self._subref.ostree_ref}")
+            raise BareRepoExistsError(f"Bare repo does not exist for {self._subref.ostree_ref}")
 
     @property
     def subref(self) -> SubReference:
@@ -496,7 +500,7 @@ class Image:
     )
 
     def __init__(self, reference: Reference) -> None:
-        self._reference: Reference = reference
+        self._reference = reference
 
     def create(self, img_format: ImageFormat, commit: Commit) -> BaseImage:
         return self._FACTORY_LIST.get(img_format).create(self._reference, commit)
