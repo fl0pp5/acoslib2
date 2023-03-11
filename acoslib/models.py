@@ -75,6 +75,9 @@ class ImageProfileExistsError(Exception):
 
 
 class Reference:
+    """
+    Класс представления ветки
+    """
     __slots__ = (
         "_repository",
         "_arch",
@@ -100,24 +103,26 @@ class Reference:
 
     @property
     def ostree_ref(self) -> pathlib.Path:
-        """Формирует (под)ветку"""
+        """Формирует ветку в контексте ostree-репозитория"""
         return pathlib.Path(self._repository.osname,
                             self._arch.value,
                             self._stream.value)
 
     @property
     def ostree_baseref(self) -> pathlib.Path:
-        """Формирует базовую ветку"""
+        """Формирует базовую ветку в контексте ostree-репозитория"""
         return pathlib.Path(self._repository.osname,
                             self._arch.value,
                             self._stream.value)
 
     @property
-    def ostree_ref_dir(self) -> pathlib.Path:
+    def ref_dir(self) -> pathlib.Path:
+        """Формирует путь до ветки"""
         return pathlib.Path(str(self.ostree_ref).lower())
 
     @property
     def repo_dir(self) -> pathlib.Path:
+        """Формирует путь до ostree-репозитория"""
         return pathlib.Path(self._repository.stream_root,
                             self._repository.osname,
                             self._arch.value,
@@ -126,35 +131,25 @@ class Reference:
 
     @property
     def image_dir(self) -> pathlib.Path:
-        return pathlib.Path(self.repository.stream_root, self.ostree_ref_dir, "images")
+        """Формирует путь до образов"""
+        return pathlib.Path(self.repository.stream_root, self.ref_dir, "images")
 
     @property
     def mkimage_dir(self) -> pathlib.Path:
+        """Формирует путь до профилей"""
         return pathlib.Path(self.repository.stream_root, self.ostree_baseref, "mkimage-profiles")
 
     @property
-    def version(self, commit: Commit = None) -> Version:
-        if not commit:
-            return Version(self.stream.value, datetime.datetime.now().strftime("%Y%m%d"), 0, 0)
-        else:
-            vars_path = pathlib.Path(self.repository.stream_root, self.ostree_ref, "vars")
-            commit_link = pathlib.Path(vars_path, commit.sha256)
-
-            link_target = commit_link.readlink()
-
-            date, major, minor = link_target[:3]
-
-        path = str(self.ostree_ref).lower().split('/')
-        stream = '_'.join(path[2:])
-
-        return Version(stream, date, major, minor)
-
-    @property
     def merged_dir(self) -> pathlib.Path:
-        return pathlib.Path(self.repository.stream_root, self.ostree_ref_dir, "roots", "merged")
+        """Формирует путь до директории, где развернута ветка"""
+        return pathlib.Path(self.repository.stream_root, self.ref_dir, "roots", "merged")
 
     @classmethod
-    def from_ostree(cls, repository: Repository, ostree_ref: str, **extra) -> Reference:
+    def from_ostree(cls, repository: Repository, ostree_ref: str) -> Reference:
+        """
+        Создает экземпляр класса из ostree-записи ветки
+        Например: altcos/x86_64/p10
+        """
         parts = ostree_ref.split("/")
         if len(parts) != 3:
             raise ValueError(f"Invalid format of reference. Reference must be like `altcos/x86_64/p10`")
@@ -170,6 +165,7 @@ class Reference:
         return True
 
     def mkprofile(self) -> Reference:
+        """Создание профиля"""
         cmdlib.runcmd(
             f"{self.repository.script_root}/cmd_mkimage-profiles.sh "
             f"{self.stream.value} "
@@ -178,28 +174,34 @@ class Reference:
         return self
 
     def mkrepo(self) -> Reference:
+        """Создание ostree-репозитория (необходимо наличие профиля)"""
         cmdlib.runcmd(f"sudo -E {self.repository.script_root}/cmd_rootfs2repo.sh {self.ostree_ref}")
         return self
 
     def checkout(self, commit: Commit) -> Reference:
+        """Разворачивание коммита в merged-директорию"""
         cmdlib.runcmd(f"{self.repository.script_root}/cmd_ostree_checkout.sh {self.ostree_ref} {commit.sha256}")
         return self
 
     def sync(self, commit: Commit) -> Reference:
+        """Синхронизация коммита"""
         cmdlib.runcmd(f"{self.repository.script_root}/cmd_sync_updates.sh "
                       f"{self.ostree_ref} {commit.version}")
         return self
 
     def clear_roots(self) -> Reference:
+        """Удаление временных директорий"""
         cmdlib.runcmd(f"{self.repository.script_root}/cmd_clear_roots.sh {self.ostree_ref}")
         return self
 
     def commit(self, commit: Commit) -> Reference:
+        """Коммит изменений"""
         cmdlib.runcmd(f"{self.repository.script_root}/cmd_ostree_commit.sh "
                       f"{self.ostree_ref} {commit.sha256} {commit.version}")
         return self
 
     def create(self) -> Reference:
+        """Создание ostree-ветки"""
         if not self.mkimage_dir.exists():
             raise ImageProfileExistsError(
                 f"Image profile for {self.ostree_ref} not exists. Use `mkprofile` method firstly")
@@ -207,6 +209,7 @@ class Reference:
         return self.mkrepo()
 
     def update(self) -> Reference:
+        """Обновление ostree-ветки"""
         commit = Commit(self).all()[-1]
 
         self.clear_roots().checkout(commit)
@@ -219,30 +222,21 @@ class Reference:
 
 
 class SubReference(Reference):
+    """
+    Класс представления подветки
+    """
     __slots__ = (
         "_name",
-        "_src_altconf",
-        "_src_root_dir"
     )
 
     def __init__(self,
                  repository: Repository,
                  arch: Arch,
                  stream: Stream,
-                 name: str,
-                 altconf: str | os.PathLike = None,
-                 root_dir: str | os.PathLike = None) -> None:
+                 name: str) -> None:
         super().__init__(repository, arch, stream)
 
         self._name = name
-        self._src_altconf = pathlib.Path(altconf) if altconf else ""
-        self._src_root_dir = pathlib.Path(root_dir) if root_dir else ""
-
-        if self._src_altconf and not self._src_altconf.exists():
-            raise FileExistsError(f"altcos config file {self._src_altconf} not exists")
-
-        if self._src_root_dir and not self._src_root_dir.exists():
-            raise FileExistsError(f"root directory {self._src_root_dir} not exists")
 
     @property
     def ostree_ref(self) -> pathlib.Path:
@@ -251,33 +245,17 @@ class SubReference(Reference):
                             self._stream.value.capitalize(),
                             self._name)
 
-    @property
-    def src_altconf(self) -> pathlib.Path:
-        return self._src_altconf
-
-    @property
-    def src_root_dir(self) -> pathlib.Path:
-        return self._src_root_dir
-
     @classmethod
-    def from_ostree(cls, repository: Repository, ostree_ref: str, **extra) -> Reference:
+    def from_ostree(cls, repository: Repository, ostree_ref: str) -> Reference:
         parts = ostree_ref.split("/")
         if len(parts) != 4:
             raise ValueError(f"Invalid format of reference. Reference must be like `altcos/x86_64/Sisyphus/k8s`")
 
-        return cls(repository, Arch(parts[1]), Stream(parts[2].lower()), parts[3], **extra)
+        return cls(repository, Arch(parts[1]), Stream(parts[2].lower()), parts[3])
 
     @classmethod
     def from_baseref(cls, base: Reference, **extra) -> SubReference:
         return cls(base.repository, base.arch, base.stream, **extra)
-
-    def make_subref_files(self):
-        cmdlib.runcmd(f"sudo -E {self.repository.script_root}/cmd_create_subref_files.sh "
-                      f"{self.ostree_ref_dir} "
-                      f"{self.src_altconf} "
-                      f"{self.src_root_dir}")
-
-        return self
 
     def checkout(self, commit: Commit) -> Reference:
         cmdlib.runcmd(f"{self.repository.script_root}/cmd_ostree_checkout.sh "
@@ -291,7 +269,7 @@ class SubReference(Reference):
 
         commit = Commit(super()).all()[-1]
 
-        self.make_subref_files().checkout(commit)
+        self.checkout(commit)
 
         AltConf(self).exec(str(self.merged_dir))
 
@@ -392,7 +370,7 @@ class AltConf:
     def __init__(self, subref: SubReference) -> None:
         self._subref = subref
         self._path = pathlib.Path(self.subref.repository.stream_root,
-                                  subref.ostree_ref_dir,
+                                  subref.ref_dir,
                                   "altconf.yml")
         self._env = {}
 
@@ -487,7 +465,7 @@ class AltConf:
         script_root = self._subref.repository.script_root
         butane_yml = yaml.safe_dump(value)
 
-        abs_ref_dir = self._subref.ostree_ref_dir.absolute()
+        abs_ref_dir = self._subref.ref_dir.absolute()
         cmd = f"echo \"{butane_yml}\" | {script_root}/cmd_ignition.sh {abs_ref_dir} {merged_dir}"
         cmdlib.runcmd(
             f"{self._make_export_env_cmd()}{cmd}",
