@@ -1,4 +1,3 @@
-import pprint
 import typing
 
 import yaml

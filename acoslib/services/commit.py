@@ -12,7 +12,7 @@ class CommitService(services.BaseService):
 
     _COMMIT_INFO_RE = re.compile(r"(commit .*\n(Parent:.*\n|)ContentChecksum: .*\nDate:.*\nVersion: .*\n)")
 
-    def list(self) -> list[types.OSTreeCommit] | None:
+    def list(self) -> list[types.Commit] | None:
         cp = cmdlib.runcmd(f"ostree log {self.reference} --repo {self.reference.repodir}")
         content = self._COMMIT_INFO_RE.findall(cp.stdout.decode())
 
@@ -41,7 +41,7 @@ class CommitService(services.BaseService):
                     case "parent:":
                         parent_id = value
 
-            commit_list.append(types.OSTreeCommit(sha256=sha256,
+            commit_list.append(types.Commit(sha256=sha256,
                                                   version=version,
                                                   date=date,
                                                   parent_id=parent_id))
@@ -49,7 +49,7 @@ class CommitService(services.BaseService):
         return sorted(commit_list,
                       key=lambda item: item.date)
 
-    def checkout(self, commit: types.OSTreeCommit) -> CommitService:
+    def checkout(self, commit: types.Commit) -> CommitService:
         if self.reference.stream != types.Stream(""):
             cmdlib.runcmd(f"{self.reference.repository.script_root}/cmd_ostree_checkout.sh "
                           f"{self.reference.baseref} {commit.sha256} {self.reference} all")
@@ -58,12 +58,12 @@ class CommitService(services.BaseService):
                           f"{self.reference} {commit.sha256}")
         return self
 
-    def sync(self, commit: types.OSTreeCommit) -> CommitService:
+    def sync(self, commit: types.Commit) -> CommitService:
         cmdlib.runcmd(f"{self.reference.repository.script_root}/cmd_sync_updates.sh "
                       f"{self.reference} {commit.sha256} {str(commit.version)}")
         return self
 
-    def commit(self, commit: types.OSTreeCommit) -> CommitService:
+    def commit(self, commit: types.Commit) -> CommitService:
         cmdlib.runcmd(f"{self.reference.repository.script_root}/cmd_ostree_commit.sh "
                       f"{self.reference} {commit.sha256} {str(commit.version)}")
         return self

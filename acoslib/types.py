@@ -21,9 +21,23 @@ class Branch(enum.Enum):
     P10 = "p10"
 
 
+class ImageFmt(enum.Enum):
+    Qcow = "qcow2"
+    Iso = "iso"
+
+
 Stream = NewType("Stream", str)
 RpmPackage = NewType("RpmPackage", str)
 AltConf = NewType("AltConf", str)
+
+
+@dataclass
+class ImageItem:
+    location: os.PathLike
+    fmt: ImageFmt
+
+
+Image = NewType("Image", list[ImageItem])
 
 
 @dataclass
@@ -91,7 +105,7 @@ class Reference:
 
 
 @dataclass
-class OSTreeCommit:
+class Commit:
     sha256: str
     version: Version
     date: datetime
