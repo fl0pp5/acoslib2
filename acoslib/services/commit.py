@@ -8,15 +8,12 @@ from acoslib import types
 from acoslib.utils import cmdlib
 
 
-class CommitService(services.RepositoryService):
+class CommitService(services.BaseService):
 
     _COMMIT_INFO_RE = re.compile(r"(commit .*\n(Parent:.*\n|)ContentChecksum: .*\nDate:.*\nVersion: .*\n)")
 
-    def __init__(self, reference: types.Reference) -> None:
-        super().__init__(reference)
-
     def list(self) -> list[types.OSTreeCommit] | None:
-        cp = cmdlib.runcmd(f"ostree log {self.ostree.ref} --repo {self.altcos.repodir}")
+        cp = cmdlib.runcmd(f"ostree log {self.reference} --repo {self.reference.repodir}")
         content = self._COMMIT_INFO_RE.findall(cp.stdout.decode())
 
         if not content:
@@ -53,17 +50,21 @@ class CommitService(services.RepositoryService):
                       key=lambda item: item.date)
 
     def checkout(self, commit: types.OSTreeCommit) -> CommitService:
-        cmdlib.runcmd(f"{self.reference.repository.script_root}/cmd_ostree_checkout.sh "
-                      f"{self.ostree.ref} {commit.sha256}")
+        if self.reference.stream != types.Stream(""):
+            cmdlib.runcmd(f"{self.reference.repository.script_root}/cmd_ostree_checkout.sh "
+                          f"{self.reference.baseref} {commit.sha256} {self.reference} all")
+        else:
+            cmdlib.runcmd(f"{self.reference.repository.script_root}/cmd_ostree_checkout.sh "
+                          f"{self.reference} {commit.sha256}")
         return self
 
     def sync(self, commit: types.OSTreeCommit) -> CommitService:
         cmdlib.runcmd(f"{self.reference.repository.script_root}/cmd_sync_updates.sh "
-                      f"{self.ostree.ref} {commit.sha256} {str(commit.version)}")
+                      f"{self.reference} {commit.sha256} {str(commit.version)}")
         return self
 
     def commit(self, commit: types.OSTreeCommit) -> CommitService:
         cmdlib.runcmd(f"{self.reference.repository.script_root}/cmd_ostree_commit.sh "
-                      f"{self.ostree.ref} {commit.sha256} {str(commit.version)}")
+                      f"{self.reference} {commit.sha256} {str(commit.version)}")
         return self
 
