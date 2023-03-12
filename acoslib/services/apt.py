@@ -4,7 +4,7 @@ from acoslib import services, types
 from acoslib.utils import cmdlib
 
 
-class AptService(services.BaseService):
+class AptService(services.AltcosService):
     def install(self, *pkgs: types.RpmPackage) -> AptService:
         cmdlib.runcmd(f"stdbuf -oL {self.reference.repository.script_root}/cmd_apt-get_install.sh "
                       f"{self.reference} {' '.join(pkgs)}")

@@ -7,7 +7,7 @@ from acoslib import services, types
 from acoslib.utils import cmdlib
 
 
-class _BaseImageService(services.BaseService, ABC):
+class _BaseImageService(services.AltcosService, ABC):
 
     @abstractmethod
     def mkimage(self, commit: types.Commit) -> _BaseImageService:
@@ -38,7 +38,7 @@ class _QcowImageService(_BaseImageService):
         return img_list
 
 
-class ImageService(services.BaseService):
+class ImageService(services.AltcosService):
     _FACTORY_LIST = {
         types.ImageFmt.Qcow: _QcowImageService,
     }

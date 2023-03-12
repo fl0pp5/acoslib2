@@ -3,12 +3,12 @@ from __future__ import annotations
 from acoslib import types
 
 
-class BaseService:
+class AltcosService:
     __slots__ = (
         "_reference",
     )
 
-    def __init__(self, reference: types.Reference, **extra) -> None:
+    def __init__(self, reference: types.Reference) -> None:
         self._reference = reference
 
     @property

@@ -59,6 +59,14 @@ class Repository:
 
 
 @dataclass
+class Commit:
+    sha256: str
+    version: Version
+    date: datetime
+    parent_id: str
+
+
+@dataclass
 class Reference:
     repository: Repository
     osname: OSName
@@ -103,10 +111,3 @@ class Reference:
     def baseref(self) -> Reference:
         return Reference(self.repository, self.osname, self.arch, self.branch)
 
-
-@dataclass
-class Commit:
-    sha256: str
-    version: Version
-    date: datetime
-    parent_id: str

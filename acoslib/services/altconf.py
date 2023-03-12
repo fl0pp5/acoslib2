@@ -8,7 +8,7 @@ from acoslib import services, types
 from acoslib.utils import cmdlib
 
 
-class AltConfService(services.BaseService):
+class AltConfService(services.AltcosService):
     __slots__ = (
         "_env",
     )
