@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import typing
 
 import yaml
@@ -20,7 +22,7 @@ class AltConfService(services.BaseService):
         cmd = [f"export {k}=\"{v}\"" for k, v in self._env.items()]
         return ";".join(cmd).strip() + ";"
 
-    def exec(self, altconf: types.AltConf) -> None:
+    def exec(self, altconf: types.AltConf) -> AltConfService:
         self._env["MERGED_DIR"] = self.reference.mergedir
 
         with open(altconf) as file:
@@ -40,6 +42,7 @@ class AltConfService(services.BaseService):
                     continue
 
                 allowed_actions.get(key)(value)
+        return self
 
     def _rpm_act(self, value: list[types.RpmPackage]) -> None:
         services.AptService(self.reference).update().install(*value)
