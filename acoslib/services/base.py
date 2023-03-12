@@ -8,7 +8,7 @@ class AltcosService:
         "_reference",
     )
 
-    def __init__(self, reference: types.Reference) -> None:
+    def __init__(self, reference: types.Reference, **extra) -> None:
         self._reference = reference
 
     @property
