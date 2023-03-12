@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pprint
+
 from acoslib import services, types
 from acoslib.utils import cmdlib
 
@@ -24,3 +26,9 @@ class AptService(services.AltcosService):
         cmdlib.runcmd(f"{self.reference.repository.script_root}/cmd_update_kernel.sh "
                       f"{self.reference}")
         return self
+
+    def list(self) -> list[types.RpmPackage]:
+        output = cmdlib.runcmd(f"{self.reference.repository.script_root}/cmd_rpm_list.sh "
+                               f"{self.reference}").stdout.decode()
+
+        return [types.RpmPackage(pkg) for pkg in output.split("\n")][:-1]
