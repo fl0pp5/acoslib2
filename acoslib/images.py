@@ -59,12 +59,12 @@ class QcowImage(BaseImage):
     @classmethod
     def create(cls, reference: models.Reference, commit_id: str) -> BaseImage:
         cmdlib.runcmd(
-            cmd=f"sudo -E {reference.repository.script_root}/cmd_make_qcow2.sh {reference.ostree_ref} {commit_id}")
+            cmd=f"sudo -E {reference.altcos_paths.script_root}/cmd_make_qcow2.sh {reference} {commit_id}")
         return QcowImage.all(reference)[-1]
 
     @classmethod
     def all(cls, reference: models.Reference) -> list[BaseImage]:
-        qcow_dir = pathlib.Path(reference.image_dir, ImageFormat.QCOW.value)
+        qcow_dir = pathlib.Path(reference.imagedir, ImageFormat.QCOW.value)
 
         if not qcow_dir.exists():
             raise FileNotFoundError(f"directory {qcow_dir} not found")
@@ -78,4 +78,3 @@ class QcowImage(BaseImage):
 
     def items(self) -> dict[str, ImageItem]:
         return {"disk": self._disk}
-
